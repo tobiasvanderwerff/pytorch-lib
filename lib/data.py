@@ -15,8 +15,8 @@ from torch.utils.data import Dataset, Subset, Sampler
 
 class LabelSmoothingLoss(nn.Module):
     def __init__(self, n_classes: int, confidence: float = 1.0, dim: int = -1):
-        """ 
-        Adds noise to one-hot encoded label vectors. 
+        """
+        Adds noise to one-hot encoded label vectors.
 
         Label smoothing prevents the pursuit of hard probabilities without
         discouraging correct classification. Degree of label smoothing is
@@ -29,7 +29,7 @@ class LabelSmoothingLoss(nn.Module):
             confidence (float): new value for the target class. Remaining `1 -
                 confidence` is uniformly distributed over the remaining classes.
             dim (int): dimension to reduce when applying softmax
-        """ 
+        """
         super().__init__()
         self.n_classes = n_classes
         self.confidence = confidence
@@ -41,7 +41,7 @@ class LabelSmoothingLoss(nn.Module):
             input (torch.Tensor): logits to calculate the loss for
             target (torch.Tensor): target values
         Returns:
-            Cross entropy loss with label smoothing applied 
+            Cross entropy loss with label smoothing applied
         """
         assert 0 < self.confidence <= 1
         if self.confidence == 1.0:
@@ -54,20 +54,20 @@ class LabelSmoothingLoss(nn.Module):
 
     @staticmethod
     @torch.no_grad()
-    def label_smoothing(labels: torch.Tensor, n_classes: int, 
+    def label_smoothing(labels: torch.Tensor, n_classes: int,
                         epsilon: float = 0.1) -> torch.Tensor:
         noise = epsilon / (n_classes - 1)
         return torch.where(labels == 1, 1 - epsilon, noise)
 
 
 class MultiTaskLoss(nn.Module):
-    """ 
+    """
     Calculates the loss for several tasks and creates a weighted sum out of
     them.
     """
 
-    def __init__(self, loss_fns: Sequence[nn.Module], 
-                 weights: Sequence[float] = None, 
+    def __init__(self, loss_fns: Sequence[nn.Module],
+                 weights: Sequence[float] = None,
                  ignore_index: int = None):
         """
         Args:
@@ -80,7 +80,7 @@ class MultiTaskLoss(nn.Module):
         self.weights = weights
         self.ignore_index = ignore_index
 
-    def forward(self, inputs: Sequence[torch.Tensor], 
+    def forward(self, inputs: Sequence[torch.Tensor],
                 targets: Sequence[torch.Tensor]) -> torch.Tensor:
         """
         Args:
@@ -107,33 +107,33 @@ class MultiTaskLoss(nn.Module):
 
 
 class DoubleTaskSampler(Sampler):
-    """ 
+    """
     Data sampler for multi-task learning.
 
     Samples indices for two different tasks, maintaining an even distribution of
-    class examples for both tasks across batches. Set this sampler as the 
+    class examples for both tasks across batches. Set this sampler as the
     `batch_sampler` argument for the Pytorch dataloader.
 
     NOTE: this sampler is dataset-specific and should be adapted to the dataset
     at hand. It does not work out-of-the-box.
-    """ 
+    """
 
     def __init__(self, dataset: Dataset, batch_size: int):
         """
         Args:
             dataset (Dataset): torch dataset
-            batch_size (int): size of the batches 
+            batch_size (int): size of the batches
         """
         self.dataset = dataset
         self.batch_size = batch_size
 
         if isinstance(dataset, Subset):
             self.style_indices = \
-                [ix for ix in range(len(dataset)) if 
+                [ix for ix in range(len(dataset)) if
                  dataset.dataset.img_ids[dataset.indices[ix]].parent.parent.name in STYLE_CLASSES]
         else:
             self.style_indices = \
-                [ix for ix in range(len(dataset)) if 
+                [ix for ix in range(len(dataset)) if
                  dataset.img_ids[ix].parent.parent.name in STYLE_CLASSES]
         self.char_indices = \
             [ix for ix in range(len(dataset)) if ix not in self.style_indices]

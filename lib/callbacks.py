@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class TrainerCallback(ABC):
     def on_evaluate(self, trainer: ".trainer.Trainer", logits: torch.Tensor,
                     targets: torch.Tensor) -> Mapping[str, float]:
-        """ 
+        """
         This hook should return a dictionary {metric: value}, containing a
         metric name and calculated value.
         """
@@ -28,13 +28,13 @@ class TrainerCallback(ABC):
         pass
 
     def on_validation_epoch_start(self, trainer: ".trainer.Trainer"):
-        """ 
-        Hook invoked at the beginning of a val epoch. 
+        """
+        Hook invoked at the beginning of a val epoch.
         """
         pass
 
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
-        """ 
+        """
         Hook invoked at the end of a val epoch. For example, can be used to
         show intermediate predictions of the model.
         """
@@ -107,22 +107,22 @@ class CallbackHandler:
         return metrics
 
     def on_train_epoch_start(self):
-        self.call_hook('on_train_epoch_start') 
+        self.call_hook('on_train_epoch_start')
 
     def on_train_epoch_end(self):
-        self.call_hook('on_train_epoch_end') 
+        self.call_hook('on_train_epoch_end')
 
     def on_validation_epoch_end(self):
-        self.call_hook('on_validation_epoch_end') 
+        self.call_hook('on_validation_epoch_end')
 
     def on_after_backward(self):
-        self.call_hook('on_after_backward') 
+        self.call_hook('on_after_backward')
 
     def on_validation_epoch_start(self):
-        self.call_hook('on_validation_epoch_start') 
+        self.call_hook('on_validation_epoch_start')
 
     def on_fit_end(self):
-        self.call_hook('on_fit_end') 
+        self.call_hook('on_fit_end')
 
     def call_hook(self, hook_name, *args):
         output = {}
@@ -135,9 +135,9 @@ class CallbackHandler:
 
 
 class GradientNormTrackingCallback(TrainerCallback):
-    """ 
+    """
     Calculates the 2-norm of the gradients in the model and displays the
-    average for each epoch. 
+    average for each epoch.
     """
 
     def __init__(self):
@@ -211,12 +211,12 @@ class CheckpointCallback(TrainerCallback):
             '-'.join(f'{metric}={value:.4f}' for metric, value in trainer.best_scores.items()) +
             '.tar'
             )
-        
-        cpt = {'model_state_dict': trainer.model.state_dict(), 
+
+        cpt = {'model_state_dict': trainer.model.state_dict(),
                'optimizer_state_dict': trainer.optimizer.state_dict()}
         cpt.update(**kwargs)
         torch.save(cpt, Path(self.dir_path) / file_name)
-        
+
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
         if self.monitor is None: return
         for cb in trainer.metric_callbacks:

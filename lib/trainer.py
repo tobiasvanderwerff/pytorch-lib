@@ -32,9 +32,12 @@ class TrainerConfig:
         epochs (int): max number of epochs to train
         grad_norm_clip (float): norm at which to clip the gradients
         max_epochs_no_change (int): number of epochs until early stopping occurs
-        num_workers: how many subprocesses to use for data loading. `0` means 
+        num_workers: how many subprocesses to use for data loading. `0` means
             that the data will be loaded in the main process.
         checkpoint_path (Path or str): directory to save checkpoints to
+        use_mixed_precision (bool): use mixed precision. This means that
+            float16 is used whenever possible, rather than float32, which is the
+            default behavior. This can significantly speed up training.
         model_name (str): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
@@ -44,16 +47,17 @@ class TrainerConfig:
     grad_norm_clip: float = 5.0
     max_epochs_no_change: int = 10
     num_workers: int = 0
+    use_mixed_precision: bool = True  # if true, use float16 where possible
     model_name: str = None
 
     def to_csv(self):
         # TODO
         raise NotImplementedError("Not implemented yet")
 
-    
+
 class Trainer:
     def __init__(
-        self, 
+        self,
         config: TrainerConfig,
         model: nn.Module,
         optimizer: optim.Optimizer,
@@ -75,7 +79,7 @@ class Trainer:
             optimizer (optim.Optimizer) optimizer
             train_ds (Dataset): dataset for training the model
             eval_ds (Dataset): dataset for evaluating the model (optional)
-            test_ds (Dataset): dataset for testing the model after 
+            test_ds (Dataset): dataset for testing the model after
                 training (optional)
             loss_fn (nn.Module): loss function to use during training
             train_batch_sampler (torch.utils.data.Sampler): batch_sampler
@@ -98,7 +102,7 @@ class Trainer:
         self.train_batch_sampler = train_batch_sampler
         self.train_collate_fn = train_collate_fn
         self.eval_collate_fn = eval_collate_fn
-        
+
         self.best_scores = {}
         self.best_state_dict = None
         self.epoch = 0
@@ -116,7 +120,7 @@ class Trainer:
                                      num_workers=self.config.num_workers, pin_memory=True,
                                      collate_fn=self.train_collate_fn)
         else:
-            trainloader = DataLoader(self.train_ds, self.config.batch_size, shuffle=True, 
+            trainloader = DataLoader(self.train_ds, self.config.batch_size, shuffle=True,
                                      num_workers=self.config.num_workers, pin_memory=True,
                                      collate_fn=self.train_collate_fn)
         return trainloader
@@ -132,14 +136,16 @@ class Trainer:
             return DataLoader(self.test_ds, self.config.batch_size, shuffle=True,
                               num_workers=self.config.num_workers, pin_memory=True,
                               collate_fn=self.eval_collate_fn)
-        
+
     def train(self):
         model, optimizer, config = self.model, self.optimizer, self.config
 
         trainloader = self.get_train_dataloader()
         evalloader = self.get_eval_dataloader()
         testloader = self.get_test_dataloader()
-    
+
+        scaler = torch.cuda.amp.GradScaler()  # used for mixed precision training
+
         def run_epoch(split):
             if split == 'train':
                 self.callback_handler.on_train_epoch_start(self)
@@ -149,28 +155,29 @@ class Trainer:
             is_train = True if split == 'train' else False
             losses = []
             self.epoch_metrics = {}
-            
+
             if split == 'train':
                 dataloader = trainloader
             elif split == 'eval':
                 dataloader = evalloader
             else:
                 dataloader = testloader
-            
+
             criterion = self.loss_fn if self.loss_fn else nn.CrossEntropyLoss()
-            
+
             pbar = tqdm(dataloader, total=len(dataloader)) if is_train else dataloader
             for data in pbar:
                 model.train(is_train)  # put model in training or evaluation mode
 
-                # put data on the appropriate device (cpu or gpu)  
+                # put data on the appropriate device (cpu or gpu)
                 imgs, *targets = [el.to(self.device) for el in data]
                 if len(targets) == 1:
                     targets = targets[0]
 
-                logits = model(imgs)  # forward pass
-                loss = criterion(logits, targets)
-                
+                with torch.cuda.amp.autocast(config.use_mixed_precision):  # mixed precision
+                    logits = model(imgs)
+                    loss = criterion(logits, targets)
+
                 losses.append(loss.item())
                 self.losses[split].append(loss.item())
 
@@ -178,10 +185,20 @@ class Trainer:
                 self.epoch_metrics.update(self.callback_handler.on_evaluate(self, logits, targets))
 
                 if is_train:
-                    loss.backward()  # calculate gradients
+                    if config.use_mixed_precision:
+                        # scale loss, to avoid underflow when using mixed precision
+                        scaler.scale(loss).backward()
+                        scaler.unscale_(optimizer)
+                    else:
+                        loss.backward()
                     self.callback_handler.on_after_backward(self)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)  # clip gradients to avoid exploding gradients
-                    optimizer.step()  # update weights
+                    # clip gradients to avoid exploding gradients
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+                    if config.use_mixed_precision:
+                        scaler.step(optimizer)
+                        scaler.update()  # updates the scale for next iteration
+                    else:
+                        optimizer.step()  # update weights
                     optimizer.zero_grad()  # set the gradients back to zero
             epoch_loss = np.mean(losses)
             info_str = f"epoch {ep} - {split}_loss: {epoch_loss:.4f}. "
@@ -194,7 +211,7 @@ class Trainer:
                 self.callback_handler.on_train_epoch_end(self)
             elif split == 'eval':
                 self.callback_handler.on_validation_epoch_end(self)
-            
+
         for ep in range(config.epochs):
             self.epoch = ep
             run_epoch('train')

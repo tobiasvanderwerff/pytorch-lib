@@ -74,15 +74,15 @@ class ClassificationReportCallback(TrainerCallback):
     def on_train_epoch_end(self):
         # display the classification report
         report = classification_report(self.targets, self.preds,
-                                       target_names=STYLE_CLASSES) 
+                                       target_names=STYLE_CLASSES)
         logger.info('Classification report:\n' + str(report))
         self.preds = []
         self.targets = []
 
 
 class ConfusionMatrixCallback(TrainerCallback):
-    """ 
-    Calculates confusion matrix over running statistics. 
+    """
+    Calculates confusion matrix over running statistics.
     """
 
     def __init__(self):
@@ -109,11 +109,11 @@ class ConfusionMatrixCallback(TrainerCallback):
 
     def on_train_epoch_end(self):
         # display the confusion matrix at the end of the epoch
-        mat = confusion_matrix(self.targets, self.predictions) 
+        mat = confusion_matrix(self.targets, self.predictions)
         logger.info('Confusion matrix (Archaic, Hasmonean, Herodian):\n' + str(mat))
         self.predictions = []
         self.targets = []
-    
+
 
 class AccuracyCallback(MetricCallback):
     def __init__(self, ignore_index=-100):
