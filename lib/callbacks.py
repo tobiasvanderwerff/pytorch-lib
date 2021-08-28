@@ -213,6 +213,7 @@ class CheckpointCallback(TrainerCallback):
         self.dir_path.mkdir(exist_ok=True, parents=True)
 
     def _save_checkpoint(self, trainer: ".trainer.Trainer"):
+        # TODO: add some sort of label encoder to the saved model (e.g. the one # by sklearn)
         if trainer.config.model_name is not None:
             model_name = trainer.config.model_name
         else:
