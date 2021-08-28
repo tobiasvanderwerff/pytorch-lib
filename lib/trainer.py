@@ -227,7 +227,7 @@ class Trainer:
                         scaler.update()  # updates the scale for next iteration
                     else:
                         optimizer.step()  # update weights
-                    optimizer.zero_grad()  # set the gradients back to zero
+                    optimizer.zero_grad(set_to_none=True)  # set the gradients back to zero
             epoch_loss = np.mean(losses)
 
             if split == "train":
