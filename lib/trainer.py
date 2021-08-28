@@ -37,7 +37,8 @@ class TrainerConfig:
         checkpoint_path (Path or str): directory to save checkpoints to
         use_mixed_precision (bool): use mixed precision. This means that
             float16 is used whenever possible, rather than float32, which is the
-            default behavior. This can significantly speed up training.
+            default behavior. This can significantly speed up training and
+            lower memory footprint.
         model_name (str): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
