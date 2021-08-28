@@ -99,31 +99,33 @@ class CallbackHandler:
     @property
     def metric_callbacks(self):
         res = []
-        for cb in isinstance(self.callbacks, MetricCallback):
-            res.append(cb)
+        for cb in self.callbacks:
+            if isinstance(cb, MetricCallback):
+                res.append(cb)
         return res
 
-    def on_evaluate(self, predictions, targets):
-        metrics = self.call_hook("on_evaluate", predictions, targets)
+    def on_evaluate(self, trainer: ".trainer.Trainer", predictions, targets):
+        # TODO: make this compliant with the intended signature of the hooks
+        metrics = self.call_hook("on_evaluate", trainer, predictions, targets)
         return metrics
 
-    def on_train_epoch_start(self):
-        self.call_hook("on_train_epoch_start")
+    def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_train_epoch_start", trainer)
 
-    def on_train_epoch_end(self):
-        self.call_hook("on_train_epoch_end")
+    def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_train_epoch_end", trainer)
 
-    def on_validation_epoch_end(self):
-        self.call_hook("on_validation_epoch_end")
+    def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_validation_epoch_end", trainer)
 
-    def on_after_backward(self):
-        self.call_hook("on_after_backward")
+    def on_after_backward(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_after_backward", trainer)
 
-    def on_validation_epoch_start(self):
-        self.call_hook("on_validation_epoch_start")
+    def on_validation_epoch_start(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_validation_epoch_start", trainer)
 
-    def on_fit_end(self):
-        self.call_hook("on_fit_end")
+    def on_fit_end(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_fit_end", trainer)
 
     def call_hook(self, hook_name, *args):
         output = {}
@@ -170,8 +172,14 @@ class EarlyStoppingCallback(TrainerCallback):
         self.max_epochs_no_change = max_epochs_no_change
         self.epochs_no_change = 0
 
+        # TODO: early stopping based on loss as default
+
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
-        for cb in trainer.metric_callbacks:
+        if trainer.callback_handler.metric_callbacks == []:
+            logger.warn(
+                "List of metric callbacks is empty. Early stopping cannot occur."
+            )
+        for cb in trainer.callback_handler.metric_callbacks:
             if cb.monitor:
                 if cb.epoch_new_best:
                     self.epochs_no_change = 0

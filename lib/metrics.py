@@ -2,6 +2,7 @@ import torch
 import logging
 
 from .callbacks import TrainerCallback, MetricCallback
+from .trainer import Trainer
 
 from sklearn.metrics import confusion_matrix, classification_report, f1_score
 
@@ -18,12 +19,14 @@ class F1ScoreCallback(MetricCallback):
     def __init__(self, monitor=False, ignore_index=-100):
         super().__init__("F1_macro", higher_is_better=True)
         self.ignore_index = -100
-        self.monitor = False
+        self.monitor = monitor
         self.predictions = []
         self.targets = []
         self.best = float("-inf")
 
-    def on_evaluate(self, logits: torch.Tensor, targets: torch.Tensor):
+    def on_evaluate(
+        self, trainer: Trainer, logits: torch.Tensor, targets: torch.Tensor
+    ):
         _, preds = logits.max(-1)
 
         preds = preds.cpu().detach().numpy()
@@ -33,15 +36,15 @@ class F1ScoreCallback(MetricCallback):
         self.preds += [pr for ix, pr in enumerate(preds) if ix in indices]
         self.targets += [t for ix, t in enumerate(targets) if ix in indices]
 
-        score = f1_score(self.targets, self.predictions, average="micro")
-        self.scores.append(score)
-        self.check_for_new_best()
-
-        return {self.name: score}
-
-    def on_train_epoch_end(self):
+    def on_validation_epoch_start(self, trainer: Trainer):
         self.predictions = []
         self.targets = []
+
+    def on_validation_epoch_end(self, trainer: Trainer):
+        score = f1_score(self.targets, self.predictions, average="macro")
+        self.scores.append(score)
+        self.check_for_new_best()
+        trainer.epoch_metrics.update({self.name: score})
 
 
 class ClassificationReportCallback(TrainerCallback):
@@ -73,7 +76,7 @@ class ClassificationReportCallback(TrainerCallback):
 
         return {}  # empty dictionary because this is not a proper metric
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self, trainer: Trainer):
         # display the classification report
         report = classification_report(
             self.targets, self.preds, target_names=STYLE_CLASSES
@@ -93,7 +96,11 @@ class ConfusionMatrixCallback(TrainerCallback):
         self.targets = []
 
     def on_evaluate(
-        self, logits: torch.Tensor, targets: torch.Tensor, ignore_index=-100
+        self,
+        trainer: Trainer,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        ignore_index=-100,
     ):
         """
         Args:
@@ -112,7 +119,7 @@ class ConfusionMatrixCallback(TrainerCallback):
 
         return {}  # empty dictionary because this is not a proper metric
 
-    def on_train_epoch_end(self):
+    def on_train_epoch_end(self, trainer: Trainer):
         # display the confusion matrix at the end of the epoch
         mat = confusion_matrix(self.targets, self.predictions)
         logger.info("Confusion matrix (Archaic, Hasmonean, Herodian):\n" + str(mat))
@@ -121,13 +128,15 @@ class ConfusionMatrixCallback(TrainerCallback):
 
 
 class AccuracyCallback(MetricCallback):
-    def __init__(self, ignore_index=-100):
+    def __init__(self, monitor=False, ignore_index=-100):
         super().__init__("accuracy", higher_is_better=True)
         self.ignore_index = ignore_index
         self.n_correct = 0
         self.n_samples = 0
+        self.monitor = monitor
+        self.best = float("-inf")
 
-    def on_evaluate(self, logits, targets, description="accuracy"):
+    def on_evaluate(self, trainer: Trainer, logits, targets):
         _, preds = logits.max(-1)
         self.n_correct += (
             torch.logical_and(targets != self.ignore_index, preds == targets)
@@ -135,8 +144,14 @@ class AccuracyCallback(MetricCallback):
             .item()
         )
         self.n_samples += (targets != self.ignore_index).sum().item()
+
+    def on_validation_epoch_start(self, trainer: Trainer):
+        self.n_correct = 0
+        self.n_samples = 0
+
+    def on_validation_epoch_end(self, trainer: Trainer):
         if self.n_samples == 0:
-            return {description: 0}
+            return {self.name: 0}
 
         score = self.n_correct / self.n_samples
         self.scores.append(score)
@@ -144,8 +159,4 @@ class AccuracyCallback(MetricCallback):
         if self.epoch_new_best:
             trainer.best_scores[self.name] = score
 
-        return {self.name: score}
-
-    def on_train_epoch_end(self):
-        self.n_correct = 0
-        self.n_samples = 0
+        trainer.epoch_metrics.update({self.name: score})

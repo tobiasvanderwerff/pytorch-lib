@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from typing import Union, Callable, Sequence
 from pathlib import Path
 
-from .callbacks import CallbackHandler, TrainerCallback, CheckpointCallback
+from .callbacks import (
+    CallbackHandler,
+    TrainerCallback,
+    CheckpointCallback,
+    EarlyStoppingCallback,
+    MetricCallback,
+)
 
 import numpy as np
 import numpy.linalg as LA
@@ -21,7 +27,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CALLBACKS = [CheckpointCallback("./checkpoints/")]
+DEFAULT_CALLBACKS = []
 
 
 @dataclass
@@ -69,9 +75,7 @@ class Trainer:
         train_batch_sampler: Sampler = None,
         train_collate_fn: Callable = None,
         eval_collate_fn: Callable = None,
-        evaluation_callback_fn: Callable = None,
         callbacks: Sequence[TrainerCallback] = None,
-        metric_callbacks: Sequence[TrainerCallback] = None,
     ):
         """
         Args:
@@ -204,10 +208,7 @@ class Trainer:
                 losses.append(loss.item())
                 self.losses[split].append(loss.item())
 
-                # calculate metrics
-                self.epoch_metrics.update(
-                    self.callback_handler.on_evaluate(self, logits, targets)
-                )
+                self.callback_handler.on_evaluate(self, logits, targets)
 
                 if is_train:
                     if config.use_mixed_precision:
@@ -228,6 +229,12 @@ class Trainer:
                         optimizer.step()  # update weights
                     optimizer.zero_grad()  # set the gradients back to zero
             epoch_loss = np.mean(losses)
+
+            if split == "train":
+                self.callback_handler.on_train_epoch_end(self)
+            elif split == "eval":
+                self.callback_handler.on_validation_epoch_end(self)
+
             info_str = f"epoch {ep} - {split}_loss: {epoch_loss:.4f}. "
             if split == "eval":
                 for metric_name in self.epoch_metrics.keys():
@@ -235,11 +242,6 @@ class Trainer:
                         f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "
                     )
             logger.info(info_str)
-
-            if split == "train":
-                self.callback_handler.on_train_epoch_end(self)
-            elif split == "eval":
-                self.callback_handler.on_validation_epoch_end(self)
 
         for ep in range(config.epochs):
             self.epoch = ep
