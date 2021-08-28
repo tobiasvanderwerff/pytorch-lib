@@ -12,9 +12,13 @@ def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def load_model(cp_path: Union[Path, str], model: nn.Module,
-               device: str, optimizer: optim.Optimizer = None) -> None:
-    """ Load a model from a checkpoint.
+def load_model(
+    cp_path: Union[Path, str],
+    model: nn.Module,
+    device: str,
+    optimizer: optim.Optimizer = None,
+) -> None:
+    """Load a model from a checkpoint.
 
     Note: checkpoint should be saved as a mapping from keys to values.
 
@@ -26,9 +30,9 @@ def load_model(cp_path: Union[Path, str], model: nn.Module,
             checkpoint (optional)
     """
     cp = torch.load(cp_path, map_location=torch.device(device))
-    model.load_state_dict(cp['model_state_dict'])
+    model.load_state_dict(cp["model_state_dict"])
     if optimizer is not None:
-        optimizer.load_state_dict(cp['optimizer_state_dict'])
+        optimizer.load_state_dict(cp["optimizer_state_dict"])
 
 
 def set_seed(seed: int) -> None:

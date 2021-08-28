@@ -48,14 +48,16 @@ class LabelSmoothingLoss(nn.Module):
             return F.cross_entropy(input, target)
         log_probs = F.log_softmax(input, self.dim)
         target_hot = F.one_hot(target, self.n_classes)
-        target_smooth = self.label_smoothing(target_hot, self.n_classes,
-                                             1 - self.confidence)
+        target_smooth = self.label_smoothing(
+            target_hot, self.n_classes, 1 - self.confidence
+        )
         return (target_smooth * -log_probs).sum(self.dim).mean()
 
     @staticmethod
     @torch.no_grad()
-    def label_smoothing(labels: torch.Tensor, n_classes: int,
-                        epsilon: float = 0.1) -> torch.Tensor:
+    def label_smoothing(
+        labels: torch.Tensor, n_classes: int, epsilon: float = 0.1
+    ) -> torch.Tensor:
         noise = epsilon / (n_classes - 1)
         return torch.where(labels == 1, 1 - epsilon, noise)
 
@@ -66,9 +68,12 @@ class MultiTaskLoss(nn.Module):
     them.
     """
 
-    def __init__(self, loss_fns: Sequence[nn.Module],
-                 weights: Sequence[float] = None,
-                 ignore_index: int = None):
+    def __init__(
+        self,
+        loss_fns: Sequence[nn.Module],
+        weights: Sequence[float] = None,
+        ignore_index: int = None,
+    ):
         """
         Args:
             loss_fns (sequence): loss functions for all tasks
@@ -80,8 +85,9 @@ class MultiTaskLoss(nn.Module):
         self.weights = weights
         self.ignore_index = ignore_index
 
-    def forward(self, inputs: Sequence[torch.Tensor],
-                targets: Sequence[torch.Tensor]) -> torch.Tensor:
+    def forward(
+        self, inputs: Sequence[torch.Tensor], targets: Sequence[torch.Tensor]
+    ) -> torch.Tensor:
         """
         Args:
             inputs: sequence containing the outputs for each task
@@ -95,7 +101,7 @@ class MultiTaskLoss(nn.Module):
             input, target = inputs[i], targets[i]
 
             if self.ignore_index:
-                mask = (target != self.ignore_index)
+                mask = target != self.ignore_index
                 input, target = input[mask], target[mask]
 
             if target.numel() != 0:
@@ -128,15 +134,21 @@ class DoubleTaskSampler(Sampler):
         self.batch_size = batch_size
 
         if isinstance(dataset, Subset):
-            self.style_indices = \
-                [ix for ix in range(len(dataset)) if
-                 dataset.dataset.img_ids[dataset.indices[ix]].parent.parent.name in STYLE_CLASSES]
+            self.style_indices = [
+                ix
+                for ix in range(len(dataset))
+                if dataset.dataset.img_ids[dataset.indices[ix]].parent.parent.name
+                in STYLE_CLASSES
+            ]
         else:
-            self.style_indices = \
-                [ix for ix in range(len(dataset)) if
-                 dataset.img_ids[ix].parent.parent.name in STYLE_CLASSES]
-        self.char_indices = \
-            [ix for ix in range(len(dataset)) if ix not in self.style_indices]
+            self.style_indices = [
+                ix
+                for ix in range(len(dataset))
+                if dataset.img_ids[ix].parent.parent.name in STYLE_CLASSES
+            ]
+        self.char_indices = [
+            ix for ix in range(len(dataset)) if ix not in self.style_indices
+        ]
 
         self.style_to_take = int(batch_size * len(self.style_indices) / len(dataset))
         self.char_to_take = batch_size - self.style_to_take
@@ -146,8 +158,12 @@ class DoubleTaskSampler(Sampler):
         random.shuffle(self.char_indices)
 
         for i in range(len(self)):  # no drop_last
-            idx_list = self.style_indices[i*self.style_to_take:(i+1)*self.style_to_take]
-            idx_list += self.char_indices[i*self.char_to_take:(i+1)*self.char_to_take]
+            idx_list = self.style_indices[
+                i * self.style_to_take : (i + 1) * self.style_to_take
+            ]
+            idx_list += self.char_indices[
+                i * self.char_to_take : (i + 1) * self.char_to_take
+            ]
             yield idx_list
 
     def __len__(self) -> int:

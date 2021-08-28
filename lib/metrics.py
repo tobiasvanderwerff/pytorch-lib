@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class F1ScoreCallback(MetricCallback):
-    """ Calculates macro F1 score at every epoch end. """
+    """Calculates macro F1 score at every epoch end."""
 
     def __init__(self, monitor=False, ignore_index=-100):
         super().__init__("F1_macro", higher_is_better=True)
@@ -21,7 +21,7 @@ class F1ScoreCallback(MetricCallback):
         self.monitor = False
         self.predictions = []
         self.targets = []
-        self.best = float('-inf')
+        self.best = float("-inf")
 
     def on_evaluate(self, logits: torch.Tensor, targets: torch.Tensor):
         _, preds = logits.max(-1)
@@ -33,7 +33,7 @@ class F1ScoreCallback(MetricCallback):
         self.preds += [pr for ix, pr in enumerate(preds) if ix in indices]
         self.targets += [t for ix, t in enumerate(targets) if ix in indices]
 
-        score = f1_score(self.targets, self.predictions, average='micro')
+        score = f1_score(self.targets, self.predictions, average="micro")
         self.scores.append(score)
         self.check_for_new_best()
 
@@ -53,7 +53,9 @@ class ClassificationReportCallback(TrainerCallback):
         self.preds = []
         self.targets = []
 
-    def on_evaluate(self, logits: torch.Tensor, targets: torch.Tensor, ignore_index=-100):
+    def on_evaluate(
+        self, logits: torch.Tensor, targets: torch.Tensor, ignore_index=-100
+    ):
         """
         Args:
             logits (torch.Tensor): 2-dimensional tensor
@@ -73,9 +75,10 @@ class ClassificationReportCallback(TrainerCallback):
 
     def on_train_epoch_end(self):
         # display the classification report
-        report = classification_report(self.targets, self.preds,
-                                       target_names=STYLE_CLASSES)
-        logger.info('Classification report:\n' + str(report))
+        report = classification_report(
+            self.targets, self.preds, target_names=STYLE_CLASSES
+        )
+        logger.info("Classification report:\n" + str(report))
         self.preds = []
         self.targets = []
 
@@ -89,7 +92,9 @@ class ConfusionMatrixCallback(TrainerCallback):
         self.predictions = []
         self.targets = []
 
-    def on_evaluate(self, logits: torch.Tensor, targets: torch.Tensor, ignore_index=-100):
+    def on_evaluate(
+        self, logits: torch.Tensor, targets: torch.Tensor, ignore_index=-100
+    ):
         """
         Args:
             logits (torch.Tensor): 2-dimensional tensor
@@ -110,7 +115,7 @@ class ConfusionMatrixCallback(TrainerCallback):
     def on_train_epoch_end(self):
         # display the confusion matrix at the end of the epoch
         mat = confusion_matrix(self.targets, self.predictions)
-        logger.info('Confusion matrix (Archaic, Hasmonean, Herodian):\n' + str(mat))
+        logger.info("Confusion matrix (Archaic, Hasmonean, Herodian):\n" + str(mat))
         self.predictions = []
         self.targets = []
 
@@ -122,11 +127,13 @@ class AccuracyCallback(MetricCallback):
         self.n_correct = 0
         self.n_samples = 0
 
-    def on_evaluate(self, logits, targets, description='accuracy'):
+    def on_evaluate(self, logits, targets, description="accuracy"):
         _, preds = logits.max(-1)
-        self.n_correct += \
-            torch.logical_and(targets != self.ignore_index,
-                              preds == targets).sum().item()
+        self.n_correct += (
+            torch.logical_and(targets != self.ignore_index, preds == targets)
+            .sum()
+            .item()
+        )
         self.n_samples += (targets != self.ignore_index).sum().item()
         if self.n_samples == 0:
             return {description: 0}

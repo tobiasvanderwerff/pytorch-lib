@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CALLBACKS = [CheckpointCallback('./checkpoints/')]
+DEFAULT_CALLBACKS = [CheckpointCallback("./checkpoints/")]
 
 
 @dataclass
@@ -65,12 +65,12 @@ class Trainer:
         eval_ds: Dataset = None,
         test_ds: Dataset = None,
         loss_fn: nn.Module = None,
-        train_batch_sampler: Sampler = None ,
+        train_batch_sampler: Sampler = None,
         train_collate_fn: Callable = None,
         eval_collate_fn: Callable = None,
         evaluation_callback_fn: Callable = None,
         callbacks: Sequence[TrainerCallback] = None,
-        metric_callbacks: Sequence[TrainerCallback] = None
+        metric_callbacks: Sequence[TrainerCallback] = None,
     ):
         """
         Args:
@@ -107,35 +107,55 @@ class Trainer:
         self.best_state_dict = None
         self.epoch = 0
         self.early_stopping_active = False
-        self.losses = {'train': [], 'eval': [], 'test': []}
-        self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        self.losses = {"train": [], "eval": [], "test": []}
+        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-        callbacks = DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
+        callbacks = (
+            DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
+        )
         self.callback_handler = CallbackHandler(callbacks)
 
     def get_train_dataloader(self):
         if self.train_batch_sampler:
-            trainloader = DataLoader(self.train_ds,
-                                     batch_sampler=self.train_batch_sampler,
-                                     num_workers=self.config.num_workers, pin_memory=True,
-                                     collate_fn=self.train_collate_fn)
+            trainloader = DataLoader(
+                self.train_ds,
+                batch_sampler=self.train_batch_sampler,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                collate_fn=self.train_collate_fn,
+            )
         else:
-            trainloader = DataLoader(self.train_ds, self.config.batch_size, shuffle=True,
-                                     num_workers=self.config.num_workers, pin_memory=True,
-                                     collate_fn=self.train_collate_fn)
+            trainloader = DataLoader(
+                self.train_ds,
+                self.config.batch_size,
+                shuffle=True,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                collate_fn=self.train_collate_fn,
+            )
         return trainloader
 
     def get_eval_dataloader(self):
         if self.eval_ds is not None:
-            return DataLoader(self.eval_ds, self.config.batch_size, shuffle=True,
-                              num_workers=self.config.num_workers, pin_memory=True,
-                              collate_fn=self.eval_collate_fn)
+            return DataLoader(
+                self.eval_ds,
+                self.config.batch_size,
+                shuffle=True,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                collate_fn=self.eval_collate_fn,
+            )
 
     def get_test_dataloader(self):
         if self.test_ds is not None:
-            return DataLoader(self.test_ds, self.config.batch_size, shuffle=True,
-                              num_workers=self.config.num_workers, pin_memory=True,
-                              collate_fn=self.eval_collate_fn)
+            return DataLoader(
+                self.test_ds,
+                self.config.batch_size,
+                shuffle=True,
+                num_workers=self.config.num_workers,
+                pin_memory=True,
+                collate_fn=self.eval_collate_fn,
+            )
 
     def train(self):
         model, optimizer, config = self.model, self.optimizer, self.config
@@ -147,18 +167,18 @@ class Trainer:
         scaler = torch.cuda.amp.GradScaler()  # used for mixed precision training
 
         def run_epoch(split):
-            if split == 'train':
+            if split == "train":
                 self.callback_handler.on_train_epoch_start(self)
-            elif split == 'eval':
+            elif split == "eval":
                 self.callback_handler.on_validation_epoch_start(self)
 
-            is_train = True if split == 'train' else False
+            is_train = True if split == "train" else False
             losses = []
             self.epoch_metrics = {}
 
-            if split == 'train':
+            if split == "train":
                 dataloader = trainloader
-            elif split == 'eval':
+            elif split == "eval":
                 dataloader = evalloader
             else:
                 dataloader = testloader
@@ -174,7 +194,9 @@ class Trainer:
                 if len(targets) == 1:
                     targets = targets[0]
 
-                with torch.cuda.amp.autocast(config.use_mixed_precision):  # mixed precision
+                with torch.cuda.amp.autocast(
+                    config.use_mixed_precision
+                ):  # mixed precision
                     logits = model(imgs)
                     loss = criterion(logits, targets)
 
@@ -182,7 +204,9 @@ class Trainer:
                 self.losses[split].append(loss.item())
 
                 # calculate metrics
-                self.epoch_metrics.update(self.callback_handler.on_evaluate(self, logits, targets))
+                self.epoch_metrics.update(
+                    self.callback_handler.on_evaluate(self, logits, targets)
+                )
 
                 if is_train:
                     if config.use_mixed_precision:
@@ -193,7 +217,9 @@ class Trainer:
                         loss.backward()
                     self.callback_handler.on_after_backward(self)
                     # clip gradients to avoid exploding gradients
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm_clip)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), config.grad_norm_clip
+                    )
                     if config.use_mixed_precision:
                         scaler.step(optimizer)
                         scaler.update()  # updates the scale for next iteration
@@ -202,29 +228,33 @@ class Trainer:
                     optimizer.zero_grad()  # set the gradients back to zero
             epoch_loss = np.mean(losses)
             info_str = f"epoch {ep} - {split}_loss: {epoch_loss:.4f}. "
-            if split == 'eval':
+            if split == "eval":
                 for metric_name in self.epoch_metrics.keys():
-                    info_str += f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "
+                    info_str += (
+                        f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "
+                    )
             logger.info(info_str)
 
-            if split == 'train':
+            if split == "train":
                 self.callback_handler.on_train_epoch_end(self)
-            elif split == 'eval':
+            elif split == "eval":
                 self.callback_handler.on_validation_epoch_end(self)
 
         for ep in range(config.epochs):
             self.epoch = ep
-            run_epoch('train')
-#             plot_grad_flow(model.named_parameters())
+            run_epoch("train")
+            #             plot_grad_flow(model.named_parameters())
             if self.eval_ds is not None:
                 with torch.no_grad():
-                    run_epoch('eval')
+                    run_epoch("eval")
             if self.early_stopping_active:
-                logger.info(f"Stopped early at epoch {ep}. Best scores: {self.best_scores}")
+                logger.info(
+                    f"Stopped early at epoch {ep}. Best scores: {self.best_scores}"
+                )
                 if self.test_ds is not None:
                     logger.info("Calculating results on test set...")
                     model.load_state_dict(self.best_state_dict)
                     with torch.no_grad():
-                        run_epoch('test')
+                        run_epoch("test")
                 break
         self.callback_handler.on_fit_end(self)

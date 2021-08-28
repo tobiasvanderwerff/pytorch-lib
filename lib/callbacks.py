@@ -11,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 class TrainerCallback(ABC):
-    def on_evaluate(self, trainer: ".trainer.Trainer", logits: torch.Tensor,
-                    targets: torch.Tensor) -> Mapping[str, float]:
+    def on_evaluate(
+        self, trainer: ".trainer.Trainer", logits: torch.Tensor, targets: torch.Tensor
+    ) -> Mapping[str, float]:
         """
         This hook should return a dictionary {metric: value}, containing a
         metric name and calculated value.
@@ -20,11 +21,11 @@ class TrainerCallback(ABC):
         pass
 
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
-        """ Hook invoked at the beginning of a training epoch. """
+        """Hook invoked at the beginning of a training epoch."""
         pass
 
     def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
-        """ Hook invoked at the end of a training epoch. """
+        """Hook invoked at the end of a training epoch."""
         pass
 
     def on_validation_epoch_start(self, trainer: ".trainer.Trainer"):
@@ -41,11 +42,11 @@ class TrainerCallback(ABC):
         pass
 
     def on_after_backward(self, trainer: ".trainer.Trainer"):
-        """ Hook invoked after loss.backward() and before optimizers are stepped. """
+        """Hook invoked after loss.backward() and before optimizers are stepped."""
         pass
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
-        """ Hook invoked after the Trainer.train() function has completed. """
+        """Hook invoked after the Trainer.train() function has completed."""
         pass
 
 
@@ -93,7 +94,7 @@ class CallbackHandler:
 
     @property
     def callback_list(self):
-        return '\n'.join(cb.__class__.__name__ for cb in self.callbacks)
+        return "\n".join(cb.__class__.__name__ for cb in self.callbacks)
 
     @property
     def metric_callbacks(self):
@@ -103,26 +104,26 @@ class CallbackHandler:
         return res
 
     def on_evaluate(self, predictions, targets):
-        metrics = self.call_hook('on_evaluate', predictions, targets)
+        metrics = self.call_hook("on_evaluate", predictions, targets)
         return metrics
 
     def on_train_epoch_start(self):
-        self.call_hook('on_train_epoch_start')
+        self.call_hook("on_train_epoch_start")
 
     def on_train_epoch_end(self):
-        self.call_hook('on_train_epoch_end')
+        self.call_hook("on_train_epoch_end")
 
     def on_validation_epoch_end(self):
-        self.call_hook('on_validation_epoch_end')
+        self.call_hook("on_validation_epoch_end")
 
     def on_after_backward(self):
-        self.call_hook('on_after_backward')
+        self.call_hook("on_after_backward")
 
     def on_validation_epoch_start(self):
-        self.call_hook('on_validation_epoch_start')
+        self.call_hook("on_validation_epoch_start")
 
     def on_fit_end(self):
-        self.call_hook('on_fit_end')
+        self.call_hook("on_fit_end")
 
     def call_hook(self, hook_name, *args):
         output = {}
@@ -157,8 +158,7 @@ class GradientNormTrackingCallback(TrainerCallback):
 
 
 class EarlyStoppingCallback(TrainerCallback):
-    def __init__(self, max_epochs_no_change=10,
-                 higher_is_better=True):
+    def __init__(self, max_epochs_no_change=10, higher_is_better=True):
         """
         Monitor one or several metrics for improvement over time and stop early
         after no improvement has occured for a given number of epochs.
@@ -173,15 +173,18 @@ class EarlyStoppingCallback(TrainerCallback):
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
         for cb in trainer.metric_callbacks:
             if cb.monitor:
-                if cb.epoch_new_best: self.epochs_no_change = 0
-                else: self.epochs_no_change += 1
+                if cb.epoch_new_best:
+                    self.epochs_no_change = 0
+                else:
+                    self.epochs_no_change += 1
         if self.epochs_no_change >= self.max_epochs_no_change:
             trainer.early_stopping_active = True
 
 
 class CheckpointCallback(TrainerCallback):
-    def __init__(self, dir_path: Union[Path, str],
-                 monitor: Union[str, List[str]] = None):
+    def __init__(
+        self, dir_path: Union[Path, str], monitor: Union[str, List[str]] = None
+    ):
         """
         Monitors given metrics and saves checkpoints each epoch when one of the
         metrics improves.
@@ -207,18 +210,23 @@ class CheckpointCallback(TrainerCallback):
         else:
             model_name = type(self.model).__name__
         file_name = (
-            f'{model_name}-epoch{trainer.epoch}-' +
-            '-'.join(f'{metric}={value:.4f}' for metric, value in trainer.best_scores.items()) +
-            '.tar'
+            f"{model_name}-epoch{trainer.epoch}-"
+            + "-".join(
+                f"{metric}={value:.4f}" for metric, value in trainer.best_scores.items()
             )
+            + ".tar"
+        )
 
-        cpt = {'model_state_dict': trainer.model.state_dict(),
-               'optimizer_state_dict': trainer.optimizer.state_dict()}
+        cpt = {
+            "model_state_dict": trainer.model.state_dict(),
+            "optimizer_state_dict": trainer.optimizer.state_dict(),
+        }
         cpt.update(**kwargs)
         torch.save(cpt, Path(self.dir_path) / file_name)
 
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
-        if self.monitor is None: return
+        if self.monitor is None:
+            return
         for cb in trainer.metric_callbacks:
             if cb.name in self.monitor:
                 if cb.epoch_new_best:
@@ -228,7 +236,8 @@ class CheckpointCallback(TrainerCallback):
                     break
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
-        if self.monitor is not None: return
+        if self.monitor is not None:
+            return
         logger.info("Saving checkpoint.")
         trainer.best_state_dict = trainer.model.state_dict()
         self._save_checkpoint(trainer)
