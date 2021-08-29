@@ -1,9 +1,19 @@
-# Taken from https://stackoverflow.com/questions/10724854/how-to-do-a-conditional-decorator-in-python#answer-10724898
-def conditional_decorator(dec, condition):
-    def decorator(func):
-        if condition:
-            return dec(func)
+from functools import wraps
+from knockknock import email_sender
+
+
+def conditional_email_sender(func):
+    """
+    Send an email using knockknock if an email was specified using the email_to_notify
+    command line argument.
+    """
+
+    @wraps(func)
+    def decorator(*args):
+        args_ = args[0]
+        if args_.email_to_notify is not None:
+            return email_sender(recipient_emails=[args_.email_to_notify])(func)(*args)
         else:
-            return func
+            return func(*args)
 
     return decorator

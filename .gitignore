@@ -144,3 +144,4 @@ tags
 
 # Mlflow directory
 mlruns
+checkpoints

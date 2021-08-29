@@ -1,5 +1,5 @@
 import logging
-from typing import List, Mapping, Union, Any
+from typing import List, Mapping, Union, Any, Sequence, Optional
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -217,12 +217,13 @@ class CheckpointCallback(TrainerCallback):
             monitor (Union[str, List[str]]): names of the metrics to monitor
                 (optional)
         """
-        if not isinstance(monitor, list):
+        if monitor is not None and not isinstance(monitor, list):
             monitor = [monitor]
         self.monitor = monitor
         self.dir_path = Path(dir_path)
 
         self.dir_path.mkdir(exist_ok=True, parents=True)
+        self.cpt_files = []
 
     def _save_checkpoint(self, trainer: ".trainer.Trainer"):
         # TODO: add some sort of label encoder to the saved model (e.g. the one # by sklearn)
@@ -230,7 +231,7 @@ class CheckpointCallback(TrainerCallback):
         if trainer.config.model_name is not None:
             model_name = trainer.config.model_name
         else:
-            model_name = type(self.model).__name__
+            model_name = type(trainer.model).__name__
         file_name = (
             f"{model_name}-epoch{trainer.epoch}-"
             + "-".join(
@@ -247,13 +248,15 @@ class CheckpointCallback(TrainerCallback):
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": trainer.optimizer.state_dict(),
         }
-        cpt.update(**kwargs)
-        torch.save(cpt, Path(self.dir_path) / file_name)
+
+        cpt_file = Path(self.dir_path) / file_name
+        torch.save(cpt, cpt_file)
+        self.cpt_files.append(cpt_file)
 
     def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
         if self.monitor is None:
             return
-        for cb in trainer.metric_callbacks:
+        for cb in trainer.callback_handler.metric_callbacks:
             if cb.name in self.monitor:
                 if cb.epoch_new_best:
                     model = (
@@ -289,23 +292,48 @@ class MLFlowCallback(TrainerCallback):
     """
 
     def __init__(
-        self, experiment_name: str = "default", run_name: str = "", port: int = 5000
+        self,
+        experiment_name: str = "default",
+        port: int = 5000,
+        artifacts_to_log: Optional[Sequence[Union[str, Path]]] = None,
     ):
+        """
+        Args:
+            experiment_name (str): experiment name that will be used in the MLFlow UI to
+                group this run under.
+            port (int): port that the tracking server URI will use.
+            artifacts_to_log (Optional[List[Union[str, Path]]]): list of files that
+                should be saved as artifacts at the end of training (optional).
+        """
         self.experiment_name = experiment_name
         self.port = port
+        self.artifacts_to_log = artifacts_to_log
 
         addr = f"http://localhost:{port}"
         mlflow.set_tracking_uri(addr)
         mlflow.set_experiment(experiment_name)
-        # TODO: set run name
 
         logger.info(f"Logging to MLFlow tracking server at {addr}")
 
     def on_fit_start(self, trainer: ".trainer.Trainer"):
-        log_param("epoch", trainer.epoch)
         log_params(trainer.config.dump())
 
     def on_after_evaluate(self, trainer: ".trainer.Trainer"):
         log_metrics(trainer.epoch_metrics)
         for l in trainer.epoch_losses:
             log_metric(f"{trainer.split_}_loss", l)
+
+    def on_fit_end(self, trainer: ".trainer.Trainer"):
+        # save specified artifacts to mlflow
+        if self.artifacts_to_log is None:
+            return
+        assert isinstance(self.artifacts_to_log, (list, tuple))
+        for path in self.artifacts_to_log:
+            mlflow.log_artifact(path)
+
+        # save model checkpoints to mlflow
+        for cb in trainer.callback_handler.callbacks:
+            if isinstance(cb, CheckpointCallback):
+                for cpt_path in cb.cpt_files:
+                    mlflow.log_artifact(cpt_path, "checkpoints")
+                break
