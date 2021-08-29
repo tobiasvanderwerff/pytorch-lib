@@ -1,23 +1,24 @@
 import logging
-from typing import List, Mapping, Union
+from typing import List, Mapping, Union, Any
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 import torch
 import numpy as np
 import numpy.linalg as LA
+import mlflow
+from mlflow import log_metric, log_metrics, log_param, log_params, log_artifacts
 
 logger = logging.getLogger(__name__)
 
 
 class TrainerCallback(ABC):
-    def on_evaluate(
-        self, trainer: ".trainer.Trainer", logits: torch.Tensor, targets: torch.Tensor
-    ) -> Mapping[str, float]:
-        """
-        This hook should return a dictionary {metric: value}, containing a
-        metric name and calculated value.
-        """
+    def on_evaluate(self, trainer: ".trainer.Trainer"):
+        """Hook invoked after calculating the loss, before backpropagating."""
+        pass
+
+    def on_after_evaluate(self, trainer: ".trainer.Trainer"):
+        """Hook invoked after on_evaluate (e.g. for logging the eval results)."""
         pass
 
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
@@ -43,6 +44,10 @@ class TrainerCallback(ABC):
 
     def on_after_backward(self, trainer: ".trainer.Trainer"):
         """Hook invoked after loss.backward() and before optimizers are stepped."""
+        pass
+
+    def on_fit_start(self, trainer: ".trainer.Trainer"):
+        """Hook invoked as the first operation when the Trainer.train() function starts."""
         pass
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
@@ -104,10 +109,11 @@ class CallbackHandler:
                 res.append(cb)
         return res
 
-    def on_evaluate(self, trainer: ".trainer.Trainer", predictions, targets):
-        # TODO: make this compliant with the intended signature of the hooks
-        metrics = self.call_hook("on_evaluate", trainer, predictions, targets)
-        return metrics
+    def on_evaluate(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_evaluate", trainer)
+
+    def on_after_evaluate(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_after_evaluate", trainer)
 
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
         self.call_hook("on_train_epoch_start", trainer)
@@ -123,6 +129,9 @@ class CallbackHandler:
 
     def on_validation_epoch_start(self, trainer: ".trainer.Trainer"):
         self.call_hook("on_validation_epoch_start", trainer)
+
+    def on_fit_start(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_fit_start", trainer)
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
         self.call_hook("on_fit_end", trainer)
@@ -270,3 +279,33 @@ class CheckpointCallback(TrainerCallback):
         )
         trainer.best_state_dict = model.state_dict()
         self._save_checkpoint(trainer)
+
+
+class MLFlowCallback(TrainerCallback):
+    """
+    Logs all relevant parameters/metrics to a local MLFlow server.
+
+    All logs are stored in the `mlflow/` directory.
+    """
+
+    def __init__(
+        self, experiment_name: str = "default", run_name: str = "", port: int = 5000
+    ):
+        self.experiment_name = experiment_name
+        self.port = port
+
+        addr = f"http://localhost:{port}"
+        mlflow.set_tracking_uri(addr)
+        mlflow.set_experiment(experiment_name)
+        # TODO: set run name
+
+        logger.info(f"Logging to MLFlow tracking server at {addr}")
+
+    def on_fit_start(self, trainer: ".trainer.Trainer"):
+        log_param("epoch", trainer.epoch)
+        log_params(trainer.config.dump())
+
+    def on_after_evaluate(self, trainer: ".trainer.Trainer"):
+        log_metrics(trainer.epoch_metrics)
+        for l in trainer.epoch_losses:
+            log_metric(f"{trainer.split_}_loss", l)

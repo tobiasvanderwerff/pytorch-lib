@@ -136,6 +136,11 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Demo dataset folder
 MNIST
 
+# Ctags
 tags
+
+# Mlflow directory
+mlruns

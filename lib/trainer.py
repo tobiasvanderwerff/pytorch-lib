@@ -5,7 +5,7 @@ Basic training loop. This code is meant to be generic and can be used to train d
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Union, Callable, Sequence
+from typing import Union, Callable, Sequence, Dict, Any
 from pathlib import Path
 
 from .callbacks import (
@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, Sampler
 from tqdm import tqdm
+from mlflow import log_metric, log_param, log_artifacts
 
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,13 @@ class TrainerConfig:
     use_swa: bool = False
     swa_start: float = 0.75
     model_name: str = None
+
+    def dump(self) -> Dict[str, Any]:
+        """
+        Returns:
+            dict: a dictionary containing all hyperparameters specified above
+        """
+        return self.__dict__
 
     def to_csv(self):
         # TODO
@@ -197,6 +205,7 @@ class Trainer:
         )
 
     def train(self):
+        self.callback_handler.on_fit_start(self)
         for ep in range(self.config.max_epochs):
             self.epoch = ep
             self._run_epoch("train")
@@ -228,10 +237,11 @@ class Trainer:
             self.callback_handler.on_validation_epoch_start(self)
 
         config, model, optimizer = self.config, self.model, self.optimizer
+        self.split_ = split
+        self.epoch_losses = []
+        self.epoch_metrics = {}
 
         is_train = True if split == "train" else False
-        losses = []
-        self.epoch_metrics = {}
 
         if split == "train":
             dataloader = self.get_train_dataloader()
@@ -257,10 +267,13 @@ class Trainer:
                 logits = model(imgs)
                 loss = criterion(logits, targets)
 
-            losses.append(loss.item())
+            self.loss_, self.logits_, self.targets_ = loss, logits, targets  # for hooks
+
+            self.epoch_losses.append(loss.item())
             self.losses[split].append(loss.item())
 
-            self.callback_handler.on_evaluate(self, logits, targets)
+            self.callback_handler.on_evaluate(self)
+            self.callback_handler.on_after_evaluate(self)
 
             if is_train:
                 if config.use_mixed_precision:
@@ -289,7 +302,7 @@ class Trainer:
                     self.swa_model.update_parameters(model)
                     self.swa_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
-        epoch_loss = np.mean(losses)
+        epoch_loss = np.mean(self.epoch_losses)
 
         if split == "train":
             self.callback_handler.on_train_epoch_end(self)
