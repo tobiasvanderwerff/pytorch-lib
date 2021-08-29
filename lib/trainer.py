@@ -35,7 +35,7 @@ class TrainerConfig:
     """
     Args:
         batch_size (int): batch size
-        epochs (int): max number of epochs to train
+        max_epochs (int): max number of epochs to train
         grad_norm_clip (float): norm at which to clip the gradients
         max_epochs_no_change (int): number of epochs until early stopping occurs
         num_workers: how many subprocesses to use for data loading. `0` means
@@ -45,21 +45,30 @@ class TrainerConfig:
             float16 is used whenever possible, rather than float32, which is the
             default behavior. This can significantly speed up training and
             lower memory footprint.
+        use_swa (bool): use Stochastic Weight Averaging (SWA). See
+            https://pytorch.org/blog/pytorch-1.6-now-includes-stochastic-weight-averaging/
+            for more details.
+        swa_start (float): only used if use_swa=True. This parameter indicates when to
+            start averaging weights. Averaging then starts when `current_epoch >=
+            swa_start * max_epochs`. Note that early stopping can interfere with this,
+            so it might be useful to train using one or the other.
         model_name (str): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
 
     batch_size: int = 128
-    epochs: int = 10
+    max_epochs: int = 10
     grad_norm_clip: float = 5.0
     max_epochs_no_change: int = 10
     num_workers: int = 0
-    use_mixed_precision: bool = True  # if true, use float16 where possible
+    use_mixed_precision: bool = True
+    use_swa: bool = False
+    swa_start: float = 0.75
     model_name: str = None
 
     def to_csv(self):
         # TODO
-        raise NotImplementedError("Not implemented yet")
+        raise NotImplementedError()
 
 
 class Trainer:
@@ -115,6 +124,29 @@ class Trainer:
         self.losses = {"train": [], "eval": [], "test": []}
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
+        if config.use_swa:
+            # TODO: maybe it makes sense to create a SWA callback, which has hooks for
+            # trainer init, and on_train_epoch_end.
+
+            logger.info("Using Stochastic Weight Averaging (SWA).")
+            # AveragedModel class keeps track of running averages of model
+            # weights, used for averaging after training.
+            self.swa_model = optim.swa_utils.AveragedModel(model)
+            # SWALR is a learning rate scheduler that anneals the learning rate to a
+            # fixed value, and then keeps it constant.
+            # TODO: how to set these parameters properly? Right now they are based on
+            # what I say from other implementations.
+            self.swa_scheduler = optim.swa_utils.SWALR(
+                optimizer,
+                swa_lr=optimizer.param_groups[0]["lr"] / 10,
+                anneal_strategy="cos",
+                anneal_epochs=5,
+            )
+            self.swa_started_ = False
+        if config.use_mixed_precision:
+            logger.info("Using mixed precision training.")
+            self.scaler = torch.cuda.amp.GradScaler()
+
         callbacks = (
             DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
         )
@@ -141,123 +173,131 @@ class Trainer:
         return trainloader
 
     def get_eval_dataloader(self):
-        if self.eval_ds is not None:
-            return DataLoader(
-                self.eval_ds,
-                self.config.batch_size,
-                shuffle=True,
-                num_workers=self.config.num_workers,
-                pin_memory=True,
-                collate_fn=self.eval_collate_fn,
-            )
+        if self.eval_ds is None:
+            return None
+        return DataLoader(
+            self.eval_ds,
+            self.config.batch_size,
+            shuffle=True,
+            num_workers=self.config.num_workers,
+            pin_memory=True,
+            collate_fn=self.eval_collate_fn,
+        )
 
     def get_test_dataloader(self):
-        if self.test_ds is not None:
-            return DataLoader(
-                self.test_ds,
-                self.config.batch_size,
-                shuffle=True,
-                num_workers=self.config.num_workers,
-                pin_memory=True,
-                collate_fn=self.eval_collate_fn,
-            )
+        if self.test_ds is None:
+            return None
+        return DataLoader(
+            self.test_ds,
+            self.config.batch_size,
+            shuffle=True,
+            num_workers=self.config.num_workers,
+            pin_memory=True,
+            collate_fn=self.eval_collate_fn,
+        )
 
     def train(self):
-        model, optimizer, config = self.model, self.optimizer, self.config
-
-        trainloader = self.get_train_dataloader()
-        evalloader = self.get_eval_dataloader()
-        testloader = self.get_test_dataloader()
-
-        scaler = torch.cuda.amp.GradScaler()  # used for mixed precision training
-
-        def run_epoch(split):
-            if split == "train":
-                self.callback_handler.on_train_epoch_start(self)
-            elif split == "eval":
-                self.callback_handler.on_validation_epoch_start(self)
-
-            is_train = True if split == "train" else False
-            losses = []
-            self.epoch_metrics = {}
-
-            if split == "train":
-                dataloader = trainloader
-            elif split == "eval":
-                dataloader = evalloader
-            else:
-                dataloader = testloader
-
-            criterion = self.loss_fn if self.loss_fn else nn.CrossEntropyLoss()
-
-            pbar = tqdm(dataloader, total=len(dataloader)) if is_train else dataloader
-            for data in pbar:
-                model.train(is_train)  # put model in training or evaluation mode
-
-                # put data on the appropriate device (cpu or gpu)
-                imgs, *targets = [el.to(self.device) for el in data]
-                if len(targets) == 1:
-                    targets = targets[0]
-
-                with torch.cuda.amp.autocast(
-                    config.use_mixed_precision
-                ):  # mixed precision
-                    logits = model(imgs)
-                    loss = criterion(logits, targets)
-
-                losses.append(loss.item())
-                self.losses[split].append(loss.item())
-
-                self.callback_handler.on_evaluate(self, logits, targets)
-
-                if is_train:
-                    if config.use_mixed_precision:
-                        # scale loss, to avoid underflow when using mixed precision
-                        scaler.scale(loss).backward()
-                        scaler.unscale_(optimizer)
-                    else:
-                        loss.backward()
-                    self.callback_handler.on_after_backward(self)
-                    # clip gradients to avoid exploding gradients
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), config.grad_norm_clip
-                    )
-                    if config.use_mixed_precision:
-                        scaler.step(optimizer)
-                        scaler.update()  # updates the scale for next iteration
-                    else:
-                        optimizer.step()  # update weights
-                    optimizer.zero_grad(set_to_none=True)  # set the gradients back to zero
-            epoch_loss = np.mean(losses)
-
-            if split == "train":
-                self.callback_handler.on_train_epoch_end(self)
-            elif split == "eval":
-                self.callback_handler.on_validation_epoch_end(self)
-
-            info_str = f"epoch {ep} - {split}_loss: {epoch_loss:.4f}. "
-            if split == "eval":
-                for metric_name in self.epoch_metrics.keys():
-                    info_str += (
-                        f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "
-                    )
-            logger.info(info_str)
-
-        for ep in range(config.epochs):
+        for ep in range(self.config.max_epochs):
             self.epoch = ep
-            run_epoch("train")
-            #             plot_grad_flow(model.named_parameters())
+            self._run_epoch("train")
+            if self.config.use_swa and self.swa_started_:
+                # update BN statistics for the SWA model after training
+                dataloader = self.get_train_dataloader()
+                torch.optim.swa_utils.update_bn(dataloader, self.swa_model)
             if self.eval_ds is not None:
-                with torch.no_grad():
-                    run_epoch("eval")
+                self.validate()
             if self.early_stopping_active:
-                logger.info(
-                    f"Stopped early at epoch {ep}. Best scores: {self.best_scores}"
-                )
                 if self.test_ds is not None:
                     logger.info("Calculating results on test set...")
-                    model.load_state_dict(self.best_state_dict)
-                    with torch.no_grad():
-                        run_epoch("test")
+                    self.test()
                 break
         self.callback_handler.on_fit_end(self)
+
+    @torch.no_grad()
+    def validate(self):
+        self._run_epoch("eval")
+
+    @torch.no_grad()
+    def test(self):
+        self._run_epoch("test")
+
+    def _run_epoch(self, split: str):
+        if split == "train":
+            self.callback_handler.on_train_epoch_start(self)
+        elif split == "eval":
+            self.callback_handler.on_validation_epoch_start(self)
+
+        config, model, optimizer = self.config, self.model, self.optimizer
+
+        is_train = True if split == "train" else False
+        losses = []
+        self.epoch_metrics = {}
+
+        if split == "train":
+            dataloader = self.get_train_dataloader()
+        elif split == "eval":
+            dataloader = self.get_eval_dataloader()
+        else:
+            dataloader = self.get_test_dataloader()
+
+        assert dataloader is not None, f"{split} dataloader not specified."
+
+        criterion = self.loss_fn if self.loss_fn else nn.CrossEntropyLoss()
+
+        pbar = tqdm(dataloader, total=len(dataloader)) if is_train else dataloader
+        for data in pbar:
+            model.train(is_train)  # put model in training or evaluation mode
+
+            # put data on the appropriate device (cpu or gpu)
+            imgs, *targets = [el.to(self.device) for el in data]
+            if len(targets) == 1:
+                targets = targets[0]
+
+            with torch.cuda.amp.autocast(config.use_mixed_precision):  # mixed precision
+                logits = model(imgs)
+                loss = criterion(logits, targets)
+
+            losses.append(loss.item())
+            self.losses[split].append(loss.item())
+
+            self.callback_handler.on_evaluate(self, logits, targets)
+
+            if is_train:
+                if config.use_mixed_precision:
+                    # scale loss, to avoid underflow when using mixed precision
+                    self.scaler.scale(loss).backward()
+                    self.scaler.unscale_(optimizer)
+                else:
+                    loss.backward()
+                self.callback_handler.on_after_backward(self)
+                # clip gradients to avoid exploding gradients
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), config.grad_norm_clip
+                )
+                if config.use_mixed_precision:
+                    self.scaler.step(optimizer)
+                    self.scaler.update()  # updates the scale for next iteration
+                else:
+                    optimizer.step()  # update weights
+                if (
+                    config.use_swa
+                    and self.epoch >= config.swa_start * config.max_epochs
+                ):
+                    if not self.swa_started_:
+                        logger.info("Starting Stochastic Weight Averaging.")
+                        self.swa_started_ = True
+                    self.swa_model.update_parameters(model)
+                    self.swa_scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
+        epoch_loss = np.mean(losses)
+
+        if split == "train":
+            self.callback_handler.on_train_epoch_end(self)
+        elif split == "eval":
+            self.callback_handler.on_validation_epoch_end(self)
+
+        info_str = f"epoch {self.epoch} - {split}_loss: {epoch_loss:.4f}. "
+        if split == "eval":
+            for metric_name in self.epoch_metrics.keys():
+                info_str += f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "
+        logger.info(info_str)

@@ -187,6 +187,9 @@ class EarlyStoppingCallback(TrainerCallback):
                     self.epochs_no_change += 1
         if self.epochs_no_change >= self.max_epochs_no_change:
             trainer.early_stopping_active = True
+            logger.info(
+                f"Stopped early at epoch {trainer.epoch}. Best scores: {trainer.best_scores}"
+            )
 
 
 class CheckpointCallback(TrainerCallback):
@@ -214,6 +217,7 @@ class CheckpointCallback(TrainerCallback):
 
     def _save_checkpoint(self, trainer: ".trainer.Trainer"):
         # TODO: add some sort of label encoder to the saved model (e.g. the one # by sklearn)
+        logger.info("Saving checkpoint.")
         if trainer.config.model_name is not None:
             model_name = trainer.config.model_name
         else:
@@ -225,9 +229,13 @@ class CheckpointCallback(TrainerCallback):
             )
             + ".tar"
         )
-
+        model = (
+            trainer.swa_model
+            if (trainer.config.use_swa and trainer.swa_started_)
+            else trainer.model
+        )
         cpt = {
-            "model_state_dict": trainer.model.state_dict(),
+            "model_state_dict": model.state_dict(),
             "optimizer_state_dict": trainer.optimizer.state_dict(),
         }
         cpt.update(**kwargs)
@@ -239,14 +247,26 @@ class CheckpointCallback(TrainerCallback):
         for cb in trainer.metric_callbacks:
             if cb.name in self.monitor:
                 if cb.epoch_new_best:
-                    logger.info("Saving checkpoint.")
-                    trainer.best_state_dict = trainer.model.state_dict()
+                    model = (
+                        trainer.swa_model
+                        if (trainer.config.use_swa and trainer.swa_started_)
+                        else trainer.model
+                    )
+                    trainer.best_state_dict = model.state_dict()
                     self._save_checkpoint(trainer)
-                    break
+                    return
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
+        """
+        If no metrics to monitor were specified, save a checkpoint at the end of
+        training.
+        """
         if self.monitor is not None:
             return
-        logger.info("Saving checkpoint.")
-        trainer.best_state_dict = trainer.model.state_dict()
+        model = (
+            trainer.swa_model
+            if (trainer.config.use_swa and trainer.swa_started_)
+            else trainer.model
+        )
+        trainer.best_state_dict = model.state_dict()
         self._save_checkpoint(trainer)
