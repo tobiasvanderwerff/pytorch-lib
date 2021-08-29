@@ -7,7 +7,6 @@ import torch
 import numpy as np
 import numpy.linalg as LA
 import mlflow
-from mlflow import log_metric, log_metrics, log_param, log_params, log_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -316,12 +315,12 @@ class MLFlowCallback(TrainerCallback):
         logger.info(f"Logging to MLFlow tracking server at {addr}")
 
     def on_fit_start(self, trainer: ".trainer.Trainer"):
-        log_params(trainer.config.dump())
+        mlflow.log_params(trainer.config.dump())
 
     def on_after_evaluate(self, trainer: ".trainer.Trainer"):
-        log_metrics(trainer.epoch_metrics)
+        mlflow.log_metrics(trainer.epoch_metrics)
         for l in trainer.epoch_losses:
-            log_metric(f"{trainer.split_}_loss", l)
+            mlflow.log_metric(f"{trainer.split_}_loss", l)
 
     def on_fit_end(self, trainer: ".trainer.Trainer"):
         # save specified artifacts to mlflow
