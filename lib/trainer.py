@@ -148,7 +148,7 @@ class Trainer:
                 optimizer,
                 swa_lr=optimizer.param_groups[0]["lr"] / 10,
                 anneal_strategy="cos",
-                anneal_epochs=5,
+                anneal_epochs=10,
             )
             self.swa_started_ = False
         if config.use_mixed_precision:
