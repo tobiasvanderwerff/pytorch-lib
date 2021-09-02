@@ -216,10 +216,10 @@ class Trainer:
             if self.eval_ds is not None:
                 self.validate()
             if self.early_stopping_active:
-                if self.test_ds is not None:
-                    logger.info("Calculating results on test set...")
-                    self.test()
                 break
+        if self.test_ds is not None:
+            logger.info("Calculating results on test set...")
+            self.test()
         self.callback_handler.on_fit_end(self)
 
     @torch.no_grad()
@@ -236,12 +236,18 @@ class Trainer:
         elif split == "eval":
             self.callback_handler.on_validation_epoch_start(self)
 
-        config, model, optimizer = self.config, self.model, self.optimizer
+        is_train = True if split == "train" else False
+
+        if self.config.use_swa and self.swa_started_ and not is_train:
+            # If SWA is active, calculate validation results using the averaged model.
+            model = self.swa_model
+        else:
+            model = self.model
+
+        config, optimizer = self.config, self.optimizer
         self.split_ = split
         self.epoch_losses = []
         self.epoch_metrics = {}
-
-        is_train = True if split == "train" else False
 
         if split == "train":
             dataloader = self.get_train_dataloader()
@@ -263,7 +269,7 @@ class Trainer:
             if len(targets) == 1:
                 targets = targets[0]
 
-            with torch.cuda.amp.autocast(config.use_mixed_precision):  # mixed precision
+            with torch.cuda.amp.autocast(config.use_mixed_precision):
                 logits = model(imgs)
                 loss = criterion(logits, targets)
 
