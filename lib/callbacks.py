@@ -1,5 +1,5 @@
 import logging
-from typing import List, Mapping, Union, Any, Sequence, Optional
+from typing import List, Mapping, Union, Any, Sequence, Optional, Dict
 from abc import ABC, abstractmethod
 from pathlib import Path
 
