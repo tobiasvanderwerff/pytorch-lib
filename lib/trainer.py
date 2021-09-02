@@ -141,12 +141,13 @@ class Trainer:
             # weights, used for averaging after training.
             self.swa_model = optim.swa_utils.AveragedModel(model)
             # SWALR is a learning rate scheduler that anneals the learning rate to a
-            # fixed value, and then keeps it constant.
+            # fixed value, and then keeps it constant. You generally gradually increase the
+            # learning rate for SWA, to escape flat local optima.
             # TODO: how to set these parameters properly? Right now they are based on
             # what I say from other implementations.
             self.swa_scheduler = optim.swa_utils.SWALR(
                 optimizer,
-                swa_lr=optimizer.param_groups[0]["lr"] / 10,
+                swa_lr=0.05,
                 anneal_strategy="cos",
                 anneal_epochs=10,
             )
@@ -212,7 +213,9 @@ class Trainer:
             if self.config.use_swa and self.swa_started_:
                 # update BN statistics for the SWA model after training
                 dataloader = self.get_train_dataloader()
-                torch.optim.swa_utils.update_bn(dataloader, self.swa_model)
+                torch.optim.swa_utils.update_bn(
+                    dataloader, self.swa_model, device=self.device
+                )
             if self.eval_ds is not None:
                 self.validate()
             if self.early_stopping_active:
