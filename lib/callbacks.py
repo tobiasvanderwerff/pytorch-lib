@@ -294,6 +294,7 @@ class MLFlowCallback(TrainerCallback):
         self,
         experiment_name: str = "default",
         port: int = 5000,
+        parameters_to_log: Optional[Dict[str, Any]] = None,
         artifacts_to_log: Optional[Sequence[Union[str, Path]]] = None,
     ):
         """
@@ -301,11 +302,14 @@ class MLFlowCallback(TrainerCallback):
             experiment_name (str): experiment name that will be used in the MLFlow UI to
                 group this run under.
             port (int): port that the tracking server URI will use.
+            parameters_to_log: Optional[Dict[str, Any]]: dictionary of parameter:value
+                pairs, which will be logged at the start of training (optional).
             artifacts_to_log (Optional[List[Union[str, Path]]]): list of files that
                 should be saved as artifacts at the end of every training epoch (optional).
         """
         self.experiment_name = experiment_name
         self.port = port
+        self.parameters_to_log = parameters_to_log
         self.artifacts_to_log = artifacts_to_log
 
         mlflow.set_experiment(experiment_name)
@@ -314,6 +318,7 @@ class MLFlowCallback(TrainerCallback):
 
     def on_fit_start(self, trainer: ".trainer.Trainer"):
         mlflow.log_params(trainer.config.dump())
+        mlflow.log_params(self.parameters_to_log)
 
     def on_after_evaluate(self, trainer: ".trainer.Trainer"):
         mlflow.log_metrics(trainer.epoch_metrics)

@@ -61,7 +61,10 @@ def main(args):
     #        AccuracyCallback(monitor=True),
     #        CheckpointCallback(checkpoint_path, monitor="accuracy"),
     #        # EarlyStoppingCallback(max_epochs_no_change=5),
-    #        MLFlowCallback(experiment_name=args.experiment_name, artifacts_to_log=[log_file])
+    #        MLFlowCallback(
+    #           experiment_name=args.experiment_name,
+    #           artifacts_to_log=[log_file],
+    #           parameters_to_log={"learning_rate": args.learning_rate})
     #    ]
     # )
 
