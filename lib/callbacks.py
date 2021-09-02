@@ -308,11 +308,9 @@ class MLFlowCallback(TrainerCallback):
         self.port = port
         self.artifacts_to_log = artifacts_to_log
 
-        addr = f"http://localhost:{port}"
-        mlflow.set_tracking_uri(addr)
         mlflow.set_experiment(experiment_name)
 
-        logger.info(f"Logging to MLFlow tracking server at {addr}")
+        logger.info("Logging to MLFlow.")
 
     def on_fit_start(self, trainer: ".trainer.Trainer"):
         mlflow.log_params(trainer.config.dump())
