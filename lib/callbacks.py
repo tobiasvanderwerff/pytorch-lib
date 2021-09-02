@@ -320,6 +320,9 @@ class MLFlowCallback(TrainerCallback):
         for l in trainer.epoch_losses:
             mlflow.log_metric(f"{trainer.split_}_loss", l)
 
+    def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
+        mlflow.log_metric("~epoch", self.epoch)
+
     def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
         # save specified artifacts to mlflow
         if self.artifacts_to_log is None:
