@@ -15,6 +15,7 @@ from .callbacks import (
     EarlyStoppingCallback,
     MetricCallback,
 )
+from .torch_utils import set_seed
 
 import numpy as np
 import numpy.linalg as LA
@@ -39,9 +40,9 @@ class TrainerConfig:
         max_epochs (int): max number of epochs to train
         grad_norm_clip (float): norm at which to clip the gradients
         max_epochs_no_change (int): number of epochs until early stopping occurs
-        num_workers: how many subprocesses to use for data loading. `0` means
+        num_workers (int): how many subprocesses to use for data loading. `0` means
             that the data will be loaded in the main process.
-        checkpoint_path (Path or str): directory to save checkpoints to
+        random_seed (Optional[int]): seed for initializing random number generators.
         use_mixed_precision (bool): use mixed precision. This means that
             float16 is used whenever possible, rather than float32, which is the
             default behavior. This can significantly speed up training and
@@ -53,7 +54,7 @@ class TrainerConfig:
             start averaging weights. Averaging then starts when `current_epoch >=
             swa_start * max_epochs`. Note that early stopping can interfere with this,
             so it might be useful to train using one or the other.
-        model_name (str): model name used when saving checkpoints. The model
+        model_name (Optional[str]): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
 
@@ -62,10 +63,11 @@ class TrainerConfig:
     grad_norm_clip: float = 5.0
     max_epochs_no_change: int = 10
     num_workers: int = 0
+    random_seed: Optional[int] = None
     use_mixed_precision: bool = True
     use_swa: bool = False
     swa_start: float = 0.75
-    model_name: str = None
+    model_name: Optional[str] = None
 
     def dump(self) -> Dict[str, Any]:
         """
@@ -160,6 +162,9 @@ class Trainer:
             DEFAULT_CALLBACKS if callbacks is None else DEFAULT_CALLBACKS + callbacks
         )
         self.callback_handler = CallbackHandler(callbacks)
+
+        if config.random_seed is not None:
+            set_seed(config.random_seed)
 
     def get_train_dataloader(self):
         if self.train_batch_sampler:

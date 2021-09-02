@@ -302,7 +302,7 @@ class MLFlowCallback(TrainerCallback):
                 group this run under.
             port (int): port that the tracking server URI will use.
             artifacts_to_log (Optional[List[Union[str, Path]]]): list of files that
-                should be saved as artifacts at the end of training (optional).
+                should be saved as artifacts at the end of every training epoch (optional).
         """
         self.experiment_name = experiment_name
         self.port = port
@@ -320,7 +320,7 @@ class MLFlowCallback(TrainerCallback):
         for l in trainer.epoch_losses:
             mlflow.log_metric(f"{trainer.split_}_loss", l)
 
-    def on_fit_end(self, trainer: ".trainer.Trainer"):
+    def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
         # save specified artifacts to mlflow
         if self.artifacts_to_log is None:
             return
@@ -328,6 +328,7 @@ class MLFlowCallback(TrainerCallback):
         for path in self.artifacts_to_log:
             mlflow.log_artifact(path)
 
+    def on_fit_end(self, trainer: ".trainer.Trainer"):
         # save model checkpoints to mlflow
         for cb in trainer.callback_handler.callbacks:
             if isinstance(cb, CheckpointCallback):
