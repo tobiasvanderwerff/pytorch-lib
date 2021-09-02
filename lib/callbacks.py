@@ -321,7 +321,7 @@ class MLFlowCallback(TrainerCallback):
             mlflow.log_metric(f"{trainer.split_}_loss", l)
 
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
-        mlflow.log_metric("~epoch", trainer.epoch)
+        mlflow.log_metric("_epoch", trainer.epoch)
 
     def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
         # save specified artifacts to mlflow
