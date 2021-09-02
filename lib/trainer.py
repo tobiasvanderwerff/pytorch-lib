@@ -5,7 +5,7 @@ Basic training loop. This code is meant to be generic and can be used to train d
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Union, Callable, Sequence, Dict, Any
+from typing import Union, Callable, Sequence, Dict, Any, Optional
 from pathlib import Path
 
 from .callbacks import (
