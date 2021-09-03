@@ -58,6 +58,8 @@ class TrainerConfig:
             will be gradually annealed to this value.
         swa_anneal_epochs (int): the amount of epochs that the learning rate will be
             annealed towards swa_lr, when using SWA.
+        save_loss_every (int): how often to save the loss in terms of no. of forward
+            passes, e.g. save_loss_every=100 saves the loss every 100 iterations.
         model_name (Optional[str]): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
@@ -73,6 +75,7 @@ class TrainerConfig:
     swa_start: float = 0.75
     swa_lr: float = 0.05
     swa_anneal_epochs: int = 10
+    save_loss_every: int = 100
     model_name: Optional[str] = None
 
     def dump(self) -> Dict[str, Any]:
@@ -275,7 +278,7 @@ class Trainer:
         criterion = self.loss_fn if self.loss_fn else nn.CrossEntropyLoss()
 
         pbar = tqdm(dataloader, total=len(dataloader)) if is_train else dataloader
-        for data in pbar:
+        for i, data in enumerate(pbar):
             model.train(is_train)  # put model in training or evaluation mode
 
             # put data on the appropriate device (cpu or gpu)
@@ -289,8 +292,9 @@ class Trainer:
 
             self.loss_, self.logits_, self.targets_ = loss, logits, targets  # for hooks
 
-            self.epoch_losses.append(loss.item())
-            self.losses[split].append(loss.item())
+            if i % config.save_loss_every == 0:
+                self.epoch_losses.append(loss.item())
+                self.losses[split].append(loss.item())
 
             self.callback_handler.on_evaluate(self)
             self.callback_handler.on_after_evaluate(self)
