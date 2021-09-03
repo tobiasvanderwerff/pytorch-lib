@@ -54,6 +54,10 @@ class TrainerConfig:
             start averaging weights. Averaging then starts when `current_epoch >=
             swa_start * max_epochs`. Note that early stopping can interfere with this,
             so it might be useful to train using one or the other.
+        swa_lr (float): final learning rate used for SWA. The previous learning rate
+            will be gradually annealed to this value.
+        swa_anneal_epochs (int): the amount of epochs that the learning rate will be
+            annealed towards swa_lr, when using SWA.
         model_name (Optional[str]): model name used when saving checkpoints. The model
             name will include a model_name key carrying this name.
     """
@@ -67,6 +71,8 @@ class TrainerConfig:
     use_mixed_precision: bool = True
     use_swa: bool = False
     swa_start: float = 0.75
+    swa_lr: float = 0.05
+    swa_anneal_epochs: int = 10
     model_name: Optional[str] = None
 
     def dump(self) -> Dict[str, Any]:
@@ -149,9 +155,9 @@ class Trainer:
             # what I say from other implementations.
             self.swa_scheduler = optim.swa_utils.SWALR(
                 optimizer,
-                swa_lr=0.05,
+                swa_lr=config.swa_lr,
                 anneal_strategy="cos",
-                anneal_epochs=10,
+                anneal_epochs=config.swa_anneal_epochs,
             )
             self.swa_started_ = False
         if config.use_mixed_precision:
