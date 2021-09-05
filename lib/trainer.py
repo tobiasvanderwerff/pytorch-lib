@@ -97,6 +97,7 @@ class Trainer:
         model: nn.Module,
         optimizer: optim.Optimizer,
         train_ds: Dataset,
+        scheduler: Any = None,
         eval_ds: Dataset = None,
         test_ds: Dataset = None,
         loss_fn: nn.Module = None,
@@ -111,6 +112,7 @@ class Trainer:
             model (nn.Module): model
             optimizer (optim.Optimizer) optimizer
             train_ds (Dataset): dataset for training the model
+            scheduler (Any): learning rate scheduler
             eval_ds (Dataset): dataset for evaluating the model (optional)
             test_ds (Dataset): dataset for testing the model after
                 training (optional)
@@ -129,6 +131,7 @@ class Trainer:
         self.model = model
         self.optimizer = optimizer
         self.train_ds = train_ds
+        self.scheduler = scheduler
         self.eval_ds = eval_ds
         self.test_ds = test_ds
         self.loss_fn = loss_fn
@@ -232,6 +235,8 @@ class Trainer:
                 )
             if self.eval_ds is not None:
                 self.validate()
+                # As of right now scheduler is only tested for reduce_on_plateau
+                self.scheduler.step(metrics=self.epoch_loss)
             if self.early_stopping_active:
                 break
         if self.test_ds is not None:
@@ -326,14 +331,14 @@ class Trainer:
                     self.swa_model.update_parameters(model)
                     self.swa_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
-        epoch_loss = np.mean(self.epoch_losses)
+        self.epoch_loss = np.mean(self.epoch_losses)
 
         if split == "train":
             self.callback_handler.on_train_epoch_end(self)
         elif split == "eval":
             self.callback_handler.on_validation_epoch_end(self)
 
-        info_str = f"epoch {self.epoch} - {split}_loss: {epoch_loss:.4f}. "
+        info_str = f"epoch {self.epoch} - {split}_loss: {self.epoch_loss:.4f}. "
         if split == "eval":
             for metric_name in self.epoch_metrics.keys():
                 info_str += f"{metric_name}: {self.epoch_metrics[metric_name]:.4f}. "

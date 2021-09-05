@@ -20,7 +20,6 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torchvision.models as models
 import numpy as np
 from torch.utils.data import Dataset, DataLoader, Subset
 
@@ -44,6 +43,15 @@ def main(args):
     logger.info(f"Writing log output to {log_file}")
 
     set_seed(args.seed)
+
+    model = torchvision.models.resnet18()
+    optimizer = optim.Adam(model.parameters(), lr=3e-4)
+    # For the default scheduler, use a cooldown of 10000 epochs to ensure that the
+    # learning rate is only decayed once. Reducing the LR only once prevents problems
+    # with decaying too much/fast, as proposed by Andrej Karpathy in a 27-08-21 tweet.
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.1, patience=10, cooldown=10000
+    )
 
     config = TrainerConfig(
         batch_size=args.batch_size,
