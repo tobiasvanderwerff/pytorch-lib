@@ -17,7 +17,11 @@ class TrainerCallback(ABC):
         pass
 
     def on_after_evaluate(self, trainer: ".trainer.Trainer"):
-        """Hook invoked after on_evaluate (e.g. for logging the eval results)."""
+        """Hook invoked after on_evaluate (e.g. for logging intermediate eval results)."""
+        pass
+
+    def on_epoch_end(self, trainer: ".trainer.Trainer"):
+        """Hook invoked at the end of an epoch."""
         pass
 
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
@@ -114,6 +118,9 @@ class CallbackHandler:
     def on_after_evaluate(self, trainer: ".trainer.Trainer"):
         self.call_hook("on_after_evaluate", trainer)
 
+    def on_epoch_end(self, trainer: ".trainer.Trainer"):
+        self.call_hook("on_epoch_end", trainer)
+
     def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
         self.call_hook("on_train_epoch_start", trainer)
 
@@ -136,13 +143,9 @@ class CallbackHandler:
         self.call_hook("on_fit_end", trainer)
 
     def call_hook(self, hook_name, *args):
-        output = {}
         for cb in self.callbacks:
             hook = getattr(cb, hook_name)
-            res = hook(*args)
-            if res is not None:
-                output.update(res)
-        return output
+            hook(*args)
 
 
 class GradientNormTrackingCallback(TrainerCallback):
@@ -248,7 +251,7 @@ class CheckpointCallback(TrainerCallback):
             "optimizer_state_dict": trainer.optimizer.state_dict(),
         }
 
-        cpt_file = Path(self.dir_path) / file_name
+        cpt_file = (Path(self.dir_path) / file_name).resolve()
         torch.save(cpt, cpt_file)
         self.cpt_files.append(cpt_file)
 
@@ -320,26 +323,30 @@ class MLFlowCallback(TrainerCallback):
         mlflow.log_params(trainer.config.dump())
         mlflow.log_params(self.parameters_to_log)
 
-    def on_after_evaluate(self, trainer: ".trainer.Trainer"):
-        mlflow.log_metrics(trainer.epoch_metrics)
+    def on_epoch_end(self, trainer: ".trainer.Trainer"):
+        # save epoch losses
         for l in trainer.epoch_losses:
             mlflow.log_metric(f"{trainer.split_}_loss", l)
 
-    def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
-        mlflow.log_metric("_epoch", trainer.epoch)
-
-    def on_train_epoch_end(self, trainer: ".trainer.Trainer"):
-        # save specified artifacts to mlflow
+        # save artifacts
         if self.artifacts_to_log is None:
             return
         assert isinstance(self.artifacts_to_log, (list, tuple))
         for path in self.artifacts_to_log:
             mlflow.log_artifact(path)
 
-    def on_fit_end(self, trainer: ".trainer.Trainer"):
-        # save model checkpoints to mlflow
+    def on_validation_epoch_end(self, trainer: ".trainer.Trainer"):
+        # save metrics
+        mlflow.log_metrics(trainer.epoch_metrics)
+
+        # save model checkpoints
+        # TODO: right now this copies *all* saved checkpoints to the mlruns directory at the end
+        # of each validation epoch, instead of saving only new checkpoints. Make this more efficient.
         for cb in trainer.callback_handler.callbacks:
             if isinstance(cb, CheckpointCallback):
                 for cpt_path in cb.cpt_files:
                     mlflow.log_artifact(cpt_path, "checkpoints")
                 break
+
+    def on_train_epoch_start(self, trainer: ".trainer.Trainer"):
+        mlflow.log_metric("_epoch", trainer.epoch)

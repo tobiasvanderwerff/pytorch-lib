@@ -37,9 +37,8 @@ class F1ScoreCallback(MetricCallback):
         targets = targets.cpu().detach().numpy()
 
         indices = [ix for ix, t in enumerate(targets) if t != self.ignore_index]
-        self.preds += [pr for ix, pr in enumerate(preds) if ix in indices]
+        self.predictions += [pr for ix, pr in enumerate(preds) if ix in indices]
         self.targets += [t for ix, t in enumerate(targets) if ix in indices]
-        trainer.epoch_metrics.update({self.name: self._f1_score()})
 
     def on_validation_epoch_start(self, trainer: Trainer):
         self.predictions = []
@@ -47,6 +46,7 @@ class F1ScoreCallback(MetricCallback):
 
     def on_validation_epoch_end(self, trainer: Trainer):
         score = self._f1_score()
+        trainer.epoch_metrics.update({self.name: score})
         self.scores.append(score)
         self.check_for_new_best()
 
@@ -57,7 +57,7 @@ class ClassificationReportCallback(TrainerCallback):
     """
 
     def __init__(self, ignore_index=-100):
-        self.preds = []
+        self.predictions = []
         self.targets = []
         self.ignore_index = ignore_index
 
@@ -69,16 +69,16 @@ class ClassificationReportCallback(TrainerCallback):
         targets = targets.cpu().detach().numpy()
 
         indices = [ix for ix, t in enumerate(targets) if t != self.ignore_index]
-        self.preds += [pr for ix, pr in enumerate(preds) if ix in indices]
+        self.predictions += [pr for ix, pr in enumerate(preds) if ix in indices]
         self.targets += [t for ix, t in enumerate(targets) if ix in indices]
 
     def on_train_epoch_end(self, trainer: Trainer):
         # display the classification report
         report = classification_report(
-            self.targets, self.preds, target_names=STYLE_CLASSES
+            self.targets, self.predictions, target_names=STYLE_CLASSES
         )
         logger.info("Classification report:\n" + str(report))
-        self.preds = []
+        self.predictions = []
         self.targets = []
 
 
@@ -136,7 +136,6 @@ class AccuracyCallback(MetricCallback):
             .item()
         )
         self.n_samples += (targets != self.ignore_index).sum().item()
-        trainer.epoch_metrics.update({self.name: self._accuracy()})
 
     def on_validation_epoch_start(self, trainer: Trainer):
         self.n_correct = 0
@@ -145,6 +144,7 @@ class AccuracyCallback(MetricCallback):
     def on_validation_epoch_end(self, trainer: Trainer):
         score = self._accuracy()
         self.scores.append(score)
+        trainer.epoch_metrics.update({self.name: score})
         self.check_for_new_best()
         if self.epoch_new_best:
             trainer.best_scores[self.name] = score
