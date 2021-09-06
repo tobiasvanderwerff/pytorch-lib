@@ -338,6 +338,8 @@ class Trainer:
         elif split == "eval":
             self.callback_handler.on_validation_epoch_end(self)
 
+        self.callback_handler.on_epoch_end(self)
+
         info_str = f"epoch {self.epoch} - {split}_loss: {self.epoch_loss:.4f}. "
         if split == "eval":
             for metric_name in self.epoch_metrics.keys():
